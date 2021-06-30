@@ -211,7 +211,6 @@ class VAE(nn.Module):
         z_dim=4,
         in_channels=1,
         init_filters=32,
-        n_filters_per_depth=2,
         n_depth=2,
         kernel_size=3,
         stride=1,
@@ -255,7 +254,7 @@ class VAE(nn.Module):
             init_filters=self.init_filters,
             n_depth=self.n_depth,
             kernel_size=self.kernel_size, 
-            tride=self.stride,
+            stride=self.stride,
             padding=self.padding,
             bias=self.bias,
             groups=self.groups

@@ -12,7 +12,6 @@ import torchvision
 import torch.nn.functional as F
 import time
 import datetime
-from divnoising import utils
 
 def lossFunctionKLD(mu, logvar):
     """Compute KL divergence loss. 
@@ -40,7 +39,8 @@ def reconstruction_loss(predicted_s, x):
     data_std: float
         Standard deviation of training and validation data combined (used for normailzation).
     """
-    reconstruction_error =  torch.mean((predicted_s-x)**2)
+    #reconstruction_error =  torch.mean((predicted_s-x)**2)
+    reconstruction_error = F.binary_cross_entropy(predicted_s, x,  reduction='sum')
     return reconstruction_error
 
 
@@ -58,9 +58,8 @@ def loss_fn(predicted_s, x, mu, logvar):
         Latent space logvar of encoder distribution.
     """
     kl_loss = lossFunctionKLD(mu, logvar)
-
+    print(kl_loss /float(x.numel()))
     reconstruction_loss_value = reconstruction_loss(predicted_s, x)
-
     return reconstruction_loss_value, kl_loss /float(x.numel())
 
 
@@ -186,9 +185,9 @@ def trainNetwork(
             )
             
             # check for posterior collapse
-            if kl_loss < kl_min:
-                print('postersior collapse: aborting')
-                return None, None, None, None
+            #if kl_loss < kl_min:
+            #    print('postersior collapse: aborting')
+            #    return None, None, None, None
             
             
             loss = reconstruction_loss + kl_weight*kl_loss
