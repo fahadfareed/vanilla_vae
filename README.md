@@ -1,9 +1,14 @@
-vanilla_vae
-==============================
+# vanilla_vae
 
-An implementation of the Variational Autoencoder
+An implementation of the Variational Autoencoder.
 
-Project Organization
+# Install
+
+Create a `conda` environment using:
+
+`conda create --name <env> --file requirements.txt`
+
+# Project Organization
 ------------
 
     ├── LICENSE
@@ -53,5 +58,3 @@ Project Organization
 
 
 --------
-
-<p><small>Project based on the <a target="_blank" href="https://drivendata.github.io/cookiecutter-data-science/">cookiecutter data science project template</a>. #cookiecutterdatascience</small></p>

@@ -1,9 +1,14 @@
-import torch
-import numpy as np
 import time
 from tqdm import tqdm
 from glob import glob
 from matplotlib import pyplot as plt
+from torchvision.transforms import ToTensor, ToPILImage
+import PIL
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
 
 def convertToFloat32(train_images,val_images):
     """Converts the data to float 32 bit type. 
@@ -42,22 +47,19 @@ def convertNumpyToTensor(numpy_array):
     """
     return torch.from_numpy(numpy_array)
 
-def augment_data(X_train):
-    """Augment data by 8-fold with 90 degree rotations and flips. 
-    Parameters
-    ----------
-    X_train: numpy array
-        Array of training images.
-    """
-    X_ = X_train.copy()
-
-    X_train_aug = np.concatenate((X_train, np.rot90(X_, 1, (1, 2))))
-    X_train_aug = np.concatenate((X_train_aug, np.rot90(X_, 2, (1, 2))))
-    X_train_aug = np.concatenate((X_train_aug, np.rot90(X_, 3, (1, 2))))
-    X_train_aug = np.concatenate((X_train_aug, np.flip(X_train_aug, axis=1)))
-
-    print('Raw image size after augmentation', X_train_aug.shape)
-    return X_train_aug
+def predictMMSE(image, samples, vae, size): 
+    vae.eval()
+    mu, sigma = vae.encode(image)
+    akku = np.zeros(size)
+    for i in range(samples):
+        z = vae.reparameterize(mu, sigma)
+        recon = vae.decode(z)
+        recon_cpu = recon.cpu()
+        recon_numpy = recon_cpu.detach().numpy()
+        recon_numpy.shape=size 
+        akku+=recon_numpy
+    output=akku/float(samples)
+    return output
 
 
 def getSamples(vae, size, zSize, mu=None, logvar=None, samples=1, tq=False):    
@@ -93,3 +95,147 @@ def getSamples(vae, size, zSize, mu=None, logvar=None, samples=1, tq=False):
         recon_numpy.shape=(recon_numpy.shape[-2],recon_numpy.shape[-1]) 
         results.append(recon_numpy) 
     return np.array(results)
+
+
+def load_image_array_patches(image_folder_path, n_samples):
+    train_image_folder_path = image_folder_path / "train"
+    val_image_folder_path = image_folder_path / "val"
+    train_image_path_list = sorted(train_image_folder_path.rglob("*.png"))
+    val_image_path_list = sorted(val_image_folder_path.rglob("*.png"))
+
+    train_image_path_list = train_image_path_list[0:n_samples]
+    val_image_path_list = val_image_path_list[0:int(n_samples/10)]
+    
+    train_patched_images = []
+    val_patched_images = []
+    for image_path in train_image_path_list:
+        image = PIL.Image.open(image_path)
+        x = ToTensor()(image)
+
+        kh, kw = 192, 128  # kernel size
+        dh, dw = 192, 128 # stride
+
+        patches = x.unfold(1, kh, dh).unfold(2, kw, dw)
+        patches = patches.contiguous().view(-1, kh, kw)
+        patches = np.array(patches)
+        train_patched_images.append(patches)
+    
+    for image_path in val_image_path_list:
+        image = PIL.Image.open(image_path)
+        x = ToTensor()(image)
+
+        kh, kw = 192, 128  # kernel size
+        dh, dw = 192, 128 # stride
+
+        patches = x.unfold(1, kh, dh).unfold(2, kw, dw)
+        patches = patches.contiguous().view(-1, kh, kw)
+        patches = np.array(patches)
+        val_patched_images.append(patches)
+
+    train_patched_images_array = np.expand_dims(np.concatenate(np.array(train_patched_images)*255, axis=0), axis=3)
+    val_patched_images_array = np.expand_dims(np.concatenate(np.array(val_patched_images)*255, axis=0), axis=3)
+    
+    return train_patched_images_array, val_patched_images_array
+
+
+def load_image_tensor_patches(image_folder_path, n_samples, size, padding=False, resize=False):
+    train_image_folder_path = image_folder_path / "train"
+    val_image_folder_path = image_folder_path / "val"
+    train_image_path_list = sorted(train_image_folder_path.rglob("*.png"))
+    val_image_path_list = sorted(val_image_folder_path.rglob("*.png"))
+
+    train_image_path_list = train_image_path_list[0:n_samples]
+    val_image_path_list = val_image_path_list[0:int(n_samples/10)]
+    
+    train_patched_images = []
+    val_patched_images = []
+
+    for image_path in train_image_path_list:
+        image = PIL.Image.open(image_path)
+        if resize:
+            image = image.resize(size)
+        image = image.convert("L")
+        x = ToTensor()(image)
+
+        kh, kw = 192, 128  # kernel size
+        dh, dw = 192, 128 # stride
+
+        if padding:
+            w_pad1 = (kw - (x.size(2)%kw)) // 2
+            w_pad2 = (kw - (x.size(2)%kw)) - w_pad1
+            h_pad1 = (kh - (x.size(1)%kh)) // 2
+            h_pad2 = (kh - (x.size(1)%kh)) - h_pad1
+            x = F.pad(x, (w_pad1, w_pad2, h_pad1, h_pad2), value=1)
+
+        patches = x.unfold(1, kh, dh).unfold(2, kw, dw)
+        patches = patches.contiguous().view(-1, kh, kw)
+        train_patched_images.append(patches)
+    
+    for image_path in val_image_path_list:
+        image = PIL.Image.open(image_path)
+        if resize:
+            image = image.resize(size)
+        image = image.convert("L")
+        x = ToTensor()(image)
+
+        kh, kw = 192, 128  # kernel size
+        dh, dw = 192, 128 # stride
+
+        if padding:
+            w_pad1 = (kw - (x.size(2)%kw)) // 2
+            w_pad2 = (kw - (x.size(2)%kw)) - w_pad1
+            h_pad1 = (kh - (x.size(1)%kh)) // 2
+            h_pad2 = (kh - (x.size(1)%kh)) - h_pad1
+            x = F.pad(x, (w_pad1, w_pad2, h_pad1, h_pad2), value=1)
+
+        patches = x.unfold(1, kh, dh).unfold(2, kw, dw)
+        patches = patches.contiguous().view(-1, kh, kw)
+        val_patched_images.append(patches)
+
+    train_images_tensor = torch.stack(train_patched_images)
+    val_images_tensor = torch.stack(val_patched_images)
+    train_images_tensor = train_images_tensor.view(-1, 1, train_images_tensor.size(2), train_images_tensor.size(3))
+    val_images_tensor = val_images_tensor.view(-1, 1, val_images_tensor.size(2), val_images_tensor.size(3))
+    train_patched_images.extend(val_patched_images)
+    mean = torch.mean(torch.cat(train_patched_images))
+    std = torch.std(torch.cat(train_patched_images))
+
+    return train_images_tensor, val_images_tensor, mean, std
+
+
+def load_full_image_arrays(image_folder_path, n_samples):
+    train_image_folder_path = image_folder_path / "train"
+    val_image_folder_path = image_folder_path / "val"
+    train_image_path_list = sorted(train_image_folder_path.rglob("*.png"))
+    val_image_path_list = sorted(val_image_folder_path.rglob("*.png"))
+    
+    train_image_path_list = train_image_path_list[0:n_samples]
+    val_image_path_list = val_image_path_list[0:int(n_samples/10)]
+    
+    train_images = [np.array((PIL.Image.open(image_path))) for image_path in train_image_path_list]
+    val_images = [np.array((PIL.Image.open(image_path))) for image_path in val_image_path_list]
+    train_images_array = np.expand_dims(np.array(train_images), axis=3)
+    val_images_array = np.expand_dims(np.array(val_images), axis=3)
+
+    return train_images_array, val_images_array
+
+def load_full_image_tensors(image_folder_path, n_samples):
+    train_image_folder_path = image_folder_path / "train"
+    val_image_folder_path = image_folder_path / "val"
+    train_image_path_list = sorted(train_image_folder_path.rglob("*.png"))
+    val_image_path_list = sorted(val_image_folder_path.rglob("*.png"))
+    train_image_path_list = train_image_path_list[0:n_samples]
+    val_image_path_list = val_image_path_list[0:int(n_samples/10)]
+    train_images = [ToTensor()(PIL.Image.open(image_path)) for image_path in train_image_path_list]
+    val_images = [ToTensor()(PIL.Image.open(image_path)) for image_path in val_image_path_list]
+
+    train_images_tensor = torch.stack(train_images)
+    val_images_tensor = torch.stack(val_images)
+    train_images_tensor = train_images_tensor.view(-1, 1, train_images_tensor.size(2), train_images_tensor.size(3))
+    val_images_tensor = val_images_tensor.view(-1, 1, val_images_tensor.size(2), val_images_tensor.size(3))
+    
+    train_images.extend(val_images)
+    mean = torch.mean(torch.cat(train_images))
+    std = torch.std(torch.cat(train_images))
+
+    return train_images_tensor, val_images_tensor, mean, std
