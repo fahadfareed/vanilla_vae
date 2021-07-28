@@ -138,7 +138,7 @@ def load_image_array_patches(image_folder_path, n_samples):
     return train_patched_images_array, val_patched_images_array
 
 
-def load_image_tensor_patches(image_folder_path, n_samples, size, padding=False, resize=False):
+def load_image_tensor_patches(image_folder_path, n_samples, size=(1536,1024), padding=False, resize=False):
     train_image_folder_path = image_folder_path / "train"
     val_image_folder_path = image_folder_path / "val"
     train_image_path_list = sorted(train_image_folder_path.rglob("*.png"))

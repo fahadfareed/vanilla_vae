@@ -39,7 +39,6 @@ def get_kl_weight(old_kl_weight,kl_annealtime):
 
 
 def trainNetwork(net, train_loader, val_loader, device,
-                 noiseModel,
                  data_mean,data_std,
                  model_name,
                  directory_path='.',
@@ -89,12 +88,14 @@ def trainNetwork(net, train_loader, val_loader, device,
 
             gaussian_noise_std = logvar_decoder
 
-            reconstruction_loss, kl_loss = loss_fn(recon, x, 
-                                                   mu,
-                                                   sigma,
-                                                   gaussian_noise_std,
-                                                   net.data_mean,
-                                                   net.data_std)
+            reconstruction_loss, kl_loss = loss_fn(
+                recon,
+                x, 
+                mu,
+                sigma,
+                gaussian_noise_std,
+                net.data_std
+            )
             if(kl_annealing==True):
                 if(epoch>kl_start):
                     loss = reconstruction_loss+new_kl_weight*kl_loss
@@ -146,10 +147,14 @@ def trainNetwork(net, train_loader, val_loader, device,
                 recon, logvar_decoder = net.decoder(z)
 
                 gaussian_noise_std =logvar_decoder
-                val_reconstruction_loss, val_kl_loss = loss_fn(recon, x, mu, sigma, gaussian_noise_std, 
-                                                               net.data_mean,
-                                                               net.data_std,
-                                                            )
+                val_reconstruction_loss, val_kl_loss = loss_fn(
+                    recon,
+                    x,
+                    mu,
+                    sigma,
+                    gaussian_noise_std, 
+                    net.data_std,
+                )
                 val_loss = val_reconstruction_loss+val_kl_loss
                 running_validation_loss.append(val_loss)
 
