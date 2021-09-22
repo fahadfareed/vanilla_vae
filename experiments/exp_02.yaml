@@ -1,0 +1,17 @@
+title: exp_02
+data_directory: ../../data/raw/simulated_clean_templates/
+n_epochs: 200
+batch_size: 256
+z_dim: 8
+learning_rate: 0.0005
+gaussian: False
+clip: False
+transform: True
+n_samples: 1000
+particle_noise_density: 2.0
+patch_size: [192,128]
+padding: False
+if_array: False
+seed: None
+bias: True
+save_default_path: /home/fahad/master_thesis/vanilla_vae/models/unsupervised/Denoising_Baseline_v3/

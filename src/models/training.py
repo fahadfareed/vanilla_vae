@@ -12,6 +12,7 @@ import torchvision
 import torch.nn.functional as F
 import time
 import datetime
+from src.features import training_features
 
 
 def lossFunctionMSE(recon_x, x, gaussian_noise_std, data_std):
@@ -53,17 +54,23 @@ def trainNetwork(net, train_loader, val_loader, device,
                 ):
 
     optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=30, factor=0.5, min_lr=1e-12, verbose=True)
-    
+    scheduler = training_features.LRScheduler(optimizer)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5, min_lr=1e-12, verbose=True)
+    early_stopping = training_features.EarlyStopping(patience=10)
+
     net.data_mean = torch.Tensor([data_mean]).to(device)
     net.data_std = torch.Tensor([data_std]).to(device)
     
-    
+    model_path = directory_path + "/" + "checkpoints/"
+    plots_path = directory_path + "/" + "plots/"
+
+    os.mkdir(model_path)
+    os.mkdir(plots_path)
     assert(gaussian_noise_std is not None)
     assert(data_std is not None)
         
     old_kl_weight=0.0    
-    
+
     seconds_last = time.time()
     for epoch in range(n_epochs):
         
@@ -110,15 +117,15 @@ def trainNetwork(net, train_loader, val_loader, device,
             loss.backward()
             optimizer.step()
             
-#         net.eval() #Uncomment it if using batch norm/dropout
+        #net.eval() #Uncomment it if using batch norm/dropout
         
         ### Print training losses
         normalizer_train = len(train_loader.dataset)
         to_print = "Epoch[{}/{}] Training Loss: {:.3f} Reconstruction Loss: {:.3f} KL Loss: {:.3f}".format(epoch+1, 
                                     n_epochs, np.mean(running_training_loss), np.mean(running_reconstruction_loss), np.mean(running_kl_loss))
         print(to_print)
-        print('saving',directory_path+model_name+"last_vae.net")
-        torch.save(net, directory_path+model_name+"last_vae.net")
+        print('saving',model_path+model_name+str(epoch)+".net")
+        torch.save(net, model_path+model_name+str(epoch)+".net")
         
         ### Save training losses 
 
@@ -132,9 +139,9 @@ def trainNetwork(net, train_loader, val_loader, device,
                                                           np.mean(running_reconstruction_loss))
             kl_loss_train_history = np.append(kl_loss_train_history, np.mean(running_kl_loss))
         
-        np.save(directory_path+"train_loss.npy", np.array(loss_train_history))
-        np.save(directory_path+"train_reco_loss.npy", np.array(reconstruction_loss_train_history))
-        np.save(directory_path+"train_kl_loss.npy", np.array(kl_loss_train_history))
+        np.save(plots_path+"train_loss.npy", np.array(loss_train_history))
+        np.save(plots_path+"train_reco_loss.npy", np.array(reconstruction_loss_train_history))
+        np.save(plots_path+"train_kl_loss.npy", np.array(kl_loss_train_history))
 
         ### Validation step
         running_validation_loss = []
@@ -160,8 +167,10 @@ def trainNetwork(net, train_loader, val_loader, device,
 
         normalizer_val = len(val_loader.dataset)
         total_epoch_loss_val = torch.mean(torch.stack(running_validation_loss))
-        scheduler.step(total_epoch_loss_val)
-        
+        scheduler(total_epoch_loss_val)
+        #early_stopping(total_epoch_loss_val)
+        #if early_stopping.early_stop:
+        #    break
         ### Save validation losses 
         if epoch == 0:
             loss_val_history = total_epoch_loss_val.item()
@@ -169,7 +178,7 @@ def trainNetwork(net, train_loader, val_loader, device,
         else:
             loss_val_history = np.append(loss_val_history, total_epoch_loss_val.item())
 
-        np.save(directory_path+"val_loss.npy", np.array(loss_val_history))
+        np.save(plots_path+"val_loss.npy", np.array(loss_val_history))
 
         if total_epoch_loss_val.item() < 0.000001+np.min(loss_val_history):
             patience_ = 0
