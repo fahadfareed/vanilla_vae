@@ -50,7 +50,8 @@ def trainNetwork(net, train_loader, val_loader, device,
                  kl_annealing = False,
                  kl_start = 2, # The number of epochs at which KL loss should be included
                  kl_annealtime = 5, # number of epochs over which KL scaling is increased from 0 to 1
-                 gaussian_noise_std = None
+                 gaussian_noise_std = None,
+                 parallel_network = False,
                 ):
 
     optimizer = torch.optim.Adam(net.parameters(), lr=lr)
@@ -69,7 +70,7 @@ def trainNetwork(net, train_loader, val_loader, device,
     assert(gaussian_noise_std is not None)
     assert(data_std is not None)
         
-    old_kl_weight=0.0    
+    old_kl_weight=0.0
 
     seconds_last = time.time()
     for epoch in range(n_epochs):
@@ -86,13 +87,15 @@ def trainNetwork(net, train_loader, val_loader, device,
         else:
             new_kl_weight=1.0
         for x, _ in train_loader:
-            x = x.cuda()
+            x = x.to(device)
             x = (x-net.data_mean) / net.data_std
             #print(x.shape)
-            mu, sigma = net.encoder(x)
-            z = net.reparameterize(mu, sigma)
-            recon, logvar_decoder = net.decoder(z)
-
+            if parallel_network:
+                mu, sigma, recon, logvar_decoder = net(x)
+            else:
+                mu, sigma = net.encoder(x)
+                z = net.reparameterize(mu, sigma)
+                recon, logvar_decoder = net.decoder(z)
             gaussian_noise_std = logvar_decoder
 
             reconstruction_loss, kl_loss = loss_fn(
@@ -147,12 +150,14 @@ def trainNetwork(net, train_loader, val_loader, device,
         running_validation_loss = []
         with torch.no_grad():
             for i, (x, _) in enumerate(val_loader):
-                x = x.cuda()
+                x = x.to(device)
                 x = (x-net.data_mean) / net.data_std
-                mu, sigma = net.encoder(x)
-                z = net.reparameterize(mu, sigma)
-                recon, logvar_decoder = net.decoder(z)
-
+                if parallel_network:
+                    mu, sigma, recon, logvar_decoder = net(x)
+                else:
+                    mu, sigma = net.encoder(x)
+                    z = net.reparameterize(mu, sigma)
+                    recon, logvar_decoder = net.decoder(z)
                 gaussian_noise_std =logvar_decoder
                 val_reconstruction_loss, val_kl_loss = loss_fn(
                     recon,

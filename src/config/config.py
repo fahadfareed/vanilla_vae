@@ -28,6 +28,8 @@ class Config:
         data_std,
         directory_path,
         bias,
+        device,
+        parallel_network=False,
     ):
         self.n_epochs = n_epochs
         self.batch_size = batch_size
@@ -43,12 +45,13 @@ class Config:
         self.n_filters_per_depth = 2
         self.n_depth = 2
         self.gaussian_noise_std = 1.0
-        self.device = torch.device("cuda:0")
+        self.device = device
         self.kl_annealing = True
         self.kl_start = 0
         self.kl_annealtime = 3
         self.directory_path = directory_path
         self.bias = bias
+        self.parallel_network = parallel_network
 
 
     def train(self):
@@ -67,7 +70,10 @@ class Config:
         val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=True)
 
         model_name = "epoch-"
-
+        if self.parallel_network:
+            vae = nn.DataParallel(vae)
+            vae = vae.to(device)
+    
         trainHist, reconHistory, klHist, valHist = training.trainNetwork(
             net=vae,
             train_loader=train_loader, 
@@ -84,7 +90,8 @@ class Config:
             kl_annealtime=self.kl_annealtime,
             data_mean=self.data_mean,
             data_std=self.data_std, 
-            gaussian_noise_std=self.gaussian_noise_std
+            gaussian_noise_std=self.gaussian_noise_std,
+            parallel_network=parallel_network
         )
 
 
@@ -99,6 +106,11 @@ def load_config(config_name):
     return config_file
 
 config_file = load_config(str(sys.argv[1]) + ".yaml")
+parallel_network = sys.argv[2]
+if parallel_network.lower() == 'True':
+    parallel_network = True
+elif parallel_network.lower() == 'False':
+    parallel_network = False
 
 train_images_folder_path = pathlib.Path(config_file["data_directory"]) / "train"
 val_images_folder_path = pathlib.Path(config_file["data_directory"]) / "val"
@@ -155,6 +167,8 @@ os.mkdir(save_path)
 for index, images in enumerate(train_images[:10]):
     plt.imsave(os.path.join(config_file["save_default_path"], config_file["title"]) + "/" + str(index) + ".png", images, cmap='gray', dpi=300.0)
 
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vae_model = Config(
     n_epochs=config_file["n_epochs"],
     batch_size=config_file["batch_size"],
@@ -165,9 +179,11 @@ vae_model = Config(
     data_mean=mean.item(),
     data_std=std.item(),
     directory_path=save_path,
-    bias=config_file["bias"]
+    bias=config_file["bias"],
+    device=device,
+    parallel_network=parallel_network,
 )
-yaml_path = save_path + "_config.yaml"
+yaml_path = save_path + "/config.yaml"
 with open(yaml_path, 'w') as file:
     documents = yaml.dump(config_file, file)
 

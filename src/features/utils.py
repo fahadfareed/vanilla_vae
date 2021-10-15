@@ -5,6 +5,7 @@ from glob import glob
 from matplotlib import pyplot as plt
 from torchvision.transforms import ToTensor, ToPILImage
 import PIL
+from sklearn.feature_extraction import image
 
 import torch
 import torch.nn as nn
@@ -33,6 +34,7 @@ PARTICLESIZE=(.0001, .001)
 def image_transform(
     images_paths_list,
     seed,
+    gaussian_sequence=0.05,
     particle_noise_density=1.0,
     transform=True,
     gaussian=False,
@@ -68,7 +70,7 @@ def image_transform(
                 mode='gaussian',
                 seed=seed,
                 clip=clip,
-                var=.05))*255
+                var=gaussian_sequence))*255
             ).convert("L")
         images.append(image)
 
@@ -100,12 +102,14 @@ def getMeanStdData(train_images,val_images, if_array=False):
         train_images = train_images.cpu().detach().numpy()*255
         val_images = val_images.cpu().detach().numpy()*255
 
-    x_train_ = np.squeeze(train_images, axis=1)
-    x_val_ = np.squeeze(val_images, axis=1)
+    #x_train_ = np.squeeze(train_images, axis=1)
+    #x_val_ = np.squeeze(val_images, axis=1)
+    x_train_ = train_images.astype('float32')
+    x_val_ = val_images.astype('float32')
     data = np.concatenate((x_train_,x_val_), axis=0)
     mean, std = np.mean(data), np.std(data)
-
-    return mean/255.0, std/255.0
+    max_intensity = np.max(data)
+    return mean, std
 
 def convertNumpyToTensor(numpy_array):
     """Convert numpy array to PyTorch tensor. 
@@ -116,11 +120,14 @@ def convertNumpyToTensor(numpy_array):
     """
     return torch.from_numpy(numpy_array)
 
-def predictMMSE(image, samples, vae, size): 
+def predictMMSE(image, samples, vae, size, parallel_network=False): 
     vae.eval()
-    mu, sigma = vae.encode(image)
     akku = np.zeros(size)
+    mu, sigma = vae.encode(image)
     for i in range(samples):
+        #if parallel_network:
+        #    mu, sigma, recon, _ = vae(image)
+        #else:
         z = vae.reparameterize(mu, sigma)
         recon = vae.decode(z)
         recon_cpu = recon.cpu()
@@ -128,7 +135,7 @@ def predictMMSE(image, samples, vae, size):
         recon_numpy.shape=size 
         akku+=recon_numpy
     output=akku/float(samples)
-    return output*255
+    return output
 
 
 def getSamples(vae, size, zSize, mu=None, logvar=None, samples=1, tq=False):    
@@ -193,7 +200,7 @@ def load_image_patches(
 ):
 
     patched_images = [
-        patching(ToTensor()(image), patch_size, padding)
+        patching(convertNumpyToTensor(np.array(image).astype('float32')).unsqueeze(0), patch_size, padding)
         for image in images
     ]
 
@@ -220,7 +227,6 @@ def load_full_images(image_folder_path, n_samples, if_array=False):
 
     return full_images
 
-
 def recreate_full_image(patches, samples):
     image_patches_list = []
     for sample in samples:
@@ -228,4 +234,74 @@ def recreate_full_image(patches, samples):
     full_image = np.concatenate(image_patches_list, axis=0)
 
     return full_image
+
+def add_noise(image, particledensity):
+    number = int(particledensity * image.width * image.height)
+    top = np.random.uniform(low=0, high=(image.height-1), size=number)
+    left = np.random.uniform(low=0, high=(image.width-1), size=number)
+    image_array = np.array(image)
+    for i in range(number):
+        image_array[int(top[i])][int(left[i])] = 0.0
+    
+    return PIL.Image.fromarray(image_array)
+
+# Biomedical
+
+def augment_data(X_train):
+    """Augment data by 8-fold with 90 degree rotations and flips. 
+    Parameters
+    ----------
+    X_train: numpy array
+        Array of training images.
+    """
+    X_ = X_train.copy()
+    X_train_aug = np.concatenate((X_train, np.rot90(X_, 1, (1, 2))))
+    X_train_aug = np.concatenate((X_train_aug, np.rot90(X_, 2, (1, 2))))
+    X_train_aug = np.concatenate((X_train_aug, np.rot90(X_, 3, (1, 2))))
+    X_train_aug = np.concatenate((X_train_aug, np.flip(X_train_aug, axis=1)))
+    return X_train_aug
+
+def extract_patches(x,patch_size,num_patches):
+    """Deterministically extract patches from array of images. 
+    Parameters
+    ----------
+    x: numpy array
+        Array of images.
+    patch_size: int
+        Size of patches to be extracted from each image.
+    num_patches: int
+        Number of patches to be extracted from each image.    
+    """
+    img_width = x.shape[2]
+    img_height = x.shape[1]
+    if(num_patches is None):
+        num_patches = int(float(img_width*img_height)/float(patch_size**2)*2)
+    patches = np.zeros(shape=(x.shape[0]*num_patches,patch_size,patch_size))
+    
+    for i in tqdm(range(x.shape[0])):
+        patches[i*num_patches:(i+1)*num_patches] = image.extract_patches_2d(x[i],(patch_size,patch_size), num_patches,
+                                                                           random_state=i)    
+    return patches
+
+def get_trainval_patches(x,split_fraction=0.85,augment=True,patch_size=128,num_patches=None):
+    np.random.shuffle(x)
+    train_images = x[:int(0.85*x.shape[0])]
+    val_images = x[int(0.85*x.shape[0]):]
+    if(augment):
+        train_images = augment_data(train_images)
+    x_train_crops = extract_patches(train_images, patch_size, num_patches)
+    x_val_crops = extract_patches(val_images, patch_size, num_patches)
+    print("Shape of training patches:", x_train_crops.shape, "Shape of validation patches:", x_val_crops.shape)
+    return x_train_crops, x_val_crops
+
+def preprocess(train_patches,val_patches, if_array):
+    data_mean, data_std = getMeanStdData(train_patches, val_patches, if_array)
+    x_train, x_val = convertToFloat32(train_patches,val_patches)
+    x_train_extra_axis = x_train[:,np.newaxis]
+    x_val_extra_axis = x_val[:,np.newaxis]
+    x_train_tensor = convertNumpyToTensor(x_train_extra_axis)
+    x_val_tensor = convertNumpyToTensor(x_val_extra_axis)
+    return x_train_tensor, x_val_tensor, data_mean, data_std
+
+
 

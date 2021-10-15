@@ -1,0 +1,17 @@
+title: exp_20
+data_directory: /home/fahad/master_thesis/vanilla_vae/data/raw/Convallaria_diaphragm/20190520_tl_25um_50msec_05pc_488_130EM_Conv.tif
+n_epochs: 250
+batch_size: 256
+z_dim: 64
+learning_rate: 0.001
+gaussian: False
+clip: False
+transform: False
+n_samples: 1000
+particle_noise_density: 1.0
+patch_size: [128,128]
+padding: False
+if_array: True
+seed: None
+bias: True
+save_default_path: /home/fahad/master_thesis/vanilla_vae/models/unsupervised/Denoising_Baseline_v4/Convallaria/

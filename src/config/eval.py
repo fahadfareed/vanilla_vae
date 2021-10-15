@@ -17,7 +17,7 @@ def PSNR(original, restored):
     if(mse == 0):  # MSE is zero means no noise is present in the signal .
                   # Therefore PSNR have no importance.
         return 100
-    max_pixel = max(np.unique(restored))
+    max_pixel = np.max(restored)
     psnr = 20 * log10(max_pixel / sqrt(mse))
     return psnr
 
@@ -53,8 +53,20 @@ image_path = utils.load_paths(
     n_samples=101,
 )[100]
 
-epoch = str(sys.argv[2])
+epoch = sys.argv[2]
+parallel_network = sys.argv[3]
+gaussian = sys.argv[4]
+psnr_plots = sys.argv[5]
 
+if parallel_network.lower() == 'True':
+    parallel_network = True
+elif parallel_network.lower() == 'False':
+    parallel_network = False
+
+if psnr_plots.lower() == 'True':
+    psnr_plots = True
+elif psnr_plots.lower() == 'False':
+    psnr_plots = False
 #ground_truth = utils.image_transform(
 #    images_paths_list=[image_path],
 #    transform=False,
@@ -80,21 +92,24 @@ def display_output(test_image, output, ground_truth, config_file, image_name):
     axes[2].set_yticks(())
 
     fig.tight_layout()
-    fig.savefig(os.path.join(config_file["save_default_path"], config_file["title"]) + "/plots" + "/" + image_name + ".png")
+    fig.savefig(os.path.join(config_file["save_default_path"], config_file["title"]) + "/plots/gaussian/" + image_name + ".png")
 
 
-def evaluate(test_image_sequence, image_path, checkpoints_path, epoch):
+def evaluate(test_image_sequence, image_path, checkpoints_path, epoch, parallel_network, gaussian, test_gaussian_sequence):
     ground_truth = utils.image_transform(
         images_paths_list=[image_path],
         transform=False,
         seed=config_file["seed"]
     )[0]
+    ground_truth = np.array(ground_truth, dtype='float64')
 
-    for sequence in test_image_sequence:
+    for sequence, gaussian_sequence in zip(test_image_sequence, test_gaussian_sequence):
         test_image = utils.image_transform(
             images_paths_list=[image_path],
+            gaussian_sequence=gaussian_sequence,
             particle_noise_density=sequence,
-            transform=True,
+            transform=False,
+            gaussian=gaussian,
             seed=config_file["seed"]
         )[0]
 
@@ -103,21 +118,24 @@ def evaluate(test_image_sequence, image_path, checkpoints_path, epoch):
 
         net = torch.load(checkpoints_path + "epoch-" + epoch + ".net")
 
-        output = utils.predictMMSE(image_sample, 10, net, size=(height, width))
+        output = utils.predictMMSE(image_sample, 10, net, size=(height, width), parallel_network=parallel_network)
         display_output(test_image, output, ground_truth, config_file, str(sequence))
-        psnr_data = psnr_plot(
-            path_to_folder=pathlib.Path(checkpoints_path),
-            image_sample=image_sample,
-            height=height,
-            width=width,
-            gt=ground_truth,
-        )
+        
+        if psnr_plots:
+            psnr_data = psnr_plot(
+                path_to_folder=pathlib.Path(checkpoints_path),
+                image_sample=image_sample,
+                height=height,
+                width=width,
+                gt=ground_truth,
+            )
 
-        np.save(plots_path + str(sequence) + "psnr_data.npy", psnr_data)
+            np.save(plots_path + str(sequence) + "psnr_data.npy", psnr_data)
 
 
 sequence = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-evaluate(sequence, image_path, checkpoints_path, epoch)
+test_gaussian_sequence = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.09]
+evaluate(sequence, image_path, checkpoints_path, epoch, parallel_network, gaussian, test_gaussian_sequence)
 
 #test_image = utils.image_transform(
 #    images_paths_list=image_path,
