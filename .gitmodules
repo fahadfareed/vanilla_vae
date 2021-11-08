@@ -1,0 +1,3 @@
+[submodule "src/DivNoising"]
+	path = src/DivNoising
+	url = https://github.com/juglab/DivNoising.git
