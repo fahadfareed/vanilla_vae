@@ -12,6 +12,6 @@ particle_noise_density: 1.0
 patch_size: [128,128]
 padding: False
 if_array: True
-seed: None
+seed: 0
 bias: True
-save_default_path: /home/fahad/master_thesis/vanilla_vae/models/unsupervised/Denoising_Baseline_v4/Convallaria/
+save_default_path: /home/fahad/master_thesis/vanilla_vae/models/unsupervised/Denoising_Baseline_v4/

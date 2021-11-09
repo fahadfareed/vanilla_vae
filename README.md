@@ -6,7 +6,7 @@ An implementation of the Variational Autoencoder.
 
 Create a `conda` environment using:
 
-`conda create --name <env> --file requirements.txt`
+`conda env create --file requirements.yml`
 
 # Project Organization
 ------------
