@@ -86,7 +86,7 @@ class Noising:
                         mode='gaussian',
                         clip=self.clip,
                         var=self.gaussian_variance
-                    )
+                    )*255.0
             else:
                 pass
             images.append(image)

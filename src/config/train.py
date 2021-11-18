@@ -6,7 +6,7 @@ import torch
 import sys
 import numpy as np
 
-from src import features
+from src.features import utils as synthetic_utils
 from DivNoising.divnoising import utils
 
 from src.config import config
@@ -44,12 +44,12 @@ def pre_processing(config_name, dataset_type):
     if dataset_type=="synthetic":
         data_directory = pathlib.Path(config_file["data_directory"])
 
-        train_images_list, val_images_list = features.utils.load_images(
+        train_images_list, val_images_list = synthetic_utils.load_images(
             data_directory=data_directory,
             n_samples=config_file["n_samples"]
         )
 
-        image_transform = features.utils.Noising(
+        image_transform = synthetic_utils.Noising(
             gaussian=config_file["gaussian"],
             particle_noise=config_file["transform"],
             seed=config_file["seed"],
@@ -64,7 +64,7 @@ def pre_processing(config_name, dataset_type):
         x_train_tensor = image_transform.noising(images_list=train_images_list)
         x_val_tensor = image_transform.noising(images_list=val_images_list)
 
-        mean, std = features.utils.getMeanStdData(x_train_tensor, x_val_tensor)
+        mean, std = synthetic_utils.getMeanStdData(x_train_tensor, x_val_tensor)
         print(x_train_tensor.shape)
         print(x_val_tensor.shape)
         print(mean)
